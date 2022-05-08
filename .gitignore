@@ -7,3 +7,9 @@ typechain
 #Hardhat files
 cache
 artifacts
+
+*.sol
+Q2/contracts/circuits/*
+Q3/contracts/circuits/*
+Q3/contracts/bonus/*
+!*.circom

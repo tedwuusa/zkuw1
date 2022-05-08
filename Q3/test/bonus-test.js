@@ -3,6 +3,11 @@ const { ethers } = require("hardhat");
 const fs = require("fs");
 const { groth16 } = require("snarkjs");
 
+const F1Field = require("ffjavascript").F1Field;
+const Scalar = require("ffjavascript").Scalar;
+exports.p = Scalar.fromString("21888242871839275222246405745257275088548364400416034343698204186575808495617");
+const Fr = new F1Field(exports.p);
+
 function unstringifyBigInts(o) {
     if ((typeof(o) == "string") && (/^[0-9]+$/.test(o) ))  {
         return BigInt(o);
@@ -34,18 +39,20 @@ describe("SystemOfEquations", function () {
     });
 
     it("Should return true for correct proof", async function () {
-        //[assignment] Add comments to explain what each line is doing
+        // Generate Proof
         const { proof, publicSignals } = await groth16.fullProve({
             "x": ["15","17","19"],
-            "A": [["1","1","1"],["1","2","3"],["2","-1","1"]],
+            "A": [["1","1","1"],["1","2","3"],["2",Fr.e(-1),"1"]],
             "b": ["51", "106", "32"]
         },
             "contracts/bonus/SystemOfEquations/SystemOfEquations_js/SystemOfEquations.wasm","contracts/bonus/SystemOfEquations/circuit_final.zkey");
 
+        // Parse proof and public signals to generate EVM contract call data
         const editedPublicSignals = unstringifyBigInts(publicSignals);
         const editedProof = unstringifyBigInts(proof);
         const calldata = await groth16.exportSolidityCallData(editedProof, editedPublicSignals);
-    
+
+        // Convert call data to expected format for calling verifier
         const argv = calldata.replace(/["[\]\s]/g, "").split(',').map(x => BigInt(x).toString());
     
         const a = [argv[0], argv[1]];
@@ -53,8 +60,40 @@ describe("SystemOfEquations", function () {
         const c = [argv[6], argv[7]];
         const Input = argv.slice(8);
 
+        // Check the circuit generates correct output (1 indicate x is the right solution)
+        expect(Input[0]).to.equal("1");
+        // Verify the proof is valid
         expect(await verifier.verifyProof(a, b, c, Input)).to.be.true;
     });
+
+    it("Should have zero output for incorrect solution", async function () {
+        // Generate Proof of incorrect solution (third value 20 instead of 19)
+        const { proof, publicSignals } = await groth16.fullProve({
+            "x": ["15","17","20"],
+            "A": [["1","1","1"],["1","2","3"],["2",Fr.e(-1),"1"]],
+            "b": ["51", "106", "32"]
+        },
+            "contracts/bonus/SystemOfEquations/SystemOfEquations_js/SystemOfEquations.wasm","contracts/bonus/SystemOfEquations/circuit_final.zkey");
+
+        // Parse proof and public signals to generate EVM contract call data
+        const editedPublicSignals = unstringifyBigInts(publicSignals);
+        const editedProof = unstringifyBigInts(proof);
+        const calldata = await groth16.exportSolidityCallData(editedProof, editedPublicSignals);
+
+        // Convert call data to expected format for calling verifier
+        const argv = calldata.replace(/["[\]\s]/g, "").split(',').map(x => BigInt(x).toString());
+    
+        const a = [argv[0], argv[1]];
+        const b = [[argv[2], argv[3]], [argv[4], argv[5]]];
+        const c = [argv[6], argv[7]];
+        const Input = argv.slice(8);
+
+        // Check the circuit generates output of 0 (indicating x is not the right solution to the equation)
+        expect(Input[0]).to.equal("0");
+        // The still have a valid proof (proof indicating we know some value that is not a solution to the equation)
+        expect(await verifier.verifyProof(a, b, c, Input)).to.be.true;
+    });
+
     it("Should return false for invalid proof", async function () {
         let a = [0, 0];
         let b = [[0, 0], [0, 0]];

@@ -1,6 +1,4 @@
-pragma circom 2.0.0;
-
-// [assignment] Modify the circuit below to perform a multiplication of three signals
+pragma circom 2.0.4; // version 2.0.4 required to support signal assignment when declared
 
 template Multiplier3 () {  
 
@@ -10,8 +8,10 @@ template Multiplier3 () {
    signal input c;
    signal output d;  
 
+   signal ab <== a * b;
+
    // Constraints.  
-   d <== a * b * c;  
+   d <== ab * c;  
 }
 
 component main = Multiplier3();
